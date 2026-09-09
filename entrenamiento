@@ -1,0 +1,100 @@
+import tensorflow as tf
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras import layers, models
+import json
+
+# --- 1. CONFIGURACIÓN ---
+DIRECTORIO_DATASET = "dataset"
+TAMAÑO_IMG = (224, 224) # Tamaño óptimo para MobileNetV2
+TAMAÑO_LOTE = 32
+EPOCAS = 15
+
+# --- 2. CARGA DEL DATASET ---
+# Divide automáticamente en 80% para entrenamiento y 20% para validación
+train_dataset = tf.keras.utils.image_dataset_from_directory(
+    DIRECTORIO_DATASET,
+    validation_split=0.2,
+    subset="training",
+    seed=123,
+    image_size=TAMAÑO_IMG,
+    batch_size=TAMAÑO_LOTE
+)
+
+val_dataset = tf.keras.utils.image_dataset_from_directory(
+    DIRECTORIO_DATASET,
+    validation_split=0.2,
+    subset="validation",
+    seed=123,
+    image_size=TAMAÑO_IMG,
+    batch_size=TAMAÑO_LOTE
+)
+
+# Guardamos los nombres de las clases para usarlos luego en la API FastAPI
+nombres_clases = train_dataset.class_names
+print(f"Clases detectadas: {nombres_clases}")
+with open("etiquetas_llaves.json", "w") as f:
+    json.dump(nombres_clases, f)
+
+# Optimizamos la carga de datos en memoria
+AUTOTUNE = tf.data.AUTOTUNE
+train_dataset = train_dataset.prefetch(buffer_size=AUTOTUNE)
+val_dataset = val_dataset.prefetch(buffer_size=AUTOTUNE)
+
+# --- 3. DATA AUGMENTATION ---
+# Genera variaciones al vuelo para evitar sobreajuste (overfitting)
+data_augmentation = tf.keras.Sequential([
+  layers.RandomFlip("horizontal_and_vertical"),
+  layers.RandomRotation(0.15),
+  layers.RandomZoom(0.1),
+])
+
+# --- 4. ARQUITECTURA DEL MODELO (TRANSFER LEARNING) ---
+# Cargamos MobileNetV2 sin su capa final de clasificación
+modelo_base = MobileNetV2(
+    input_shape=TAMAÑO_IMG + (3,),
+    include_top=False,
+    weights='imagenet'
+)
+# Congelamos los pesos preentrenados
+modelo_base.trainable = False
+
+# Construimos el modelo final
+inputs = tf.keras.Input(shape=TAMAÑO_IMG + (3,))
+x = data_augmentation(inputs)
+# MobileNetV2 requiere que los píxeles estén entre -1 y 1
+x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
+x = modelo_base(x, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dropout(0.2)(x) # Previene el sobreajuste
+outputs = layers.Dense(len(nombres_clases), activation='softmax')(x)
+
+modelo = tf.keras.Model(inputs, outputs)
+
+# --- 5. COMPILACIÓN Y ENTRENAMIENTO ---
+modelo.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+print("Iniciando el entrenamiento...")
+historia = modelo.fit(
+    train_dataset,
+    validation_data=val_dataset,
+    epochs=EPOCAS
+)
+
+# --- 6. EXPORTACIÓN A TENSORFLOW LITE ---
+print("Convirtiendo modelo a TensorFlow Lite...")
+converter = tf.lite.TFLiteConverter.from_keras_model(modelo)
+
+# Aplicamos Cuantización de Rango Dinámico (reduce el tamaño 4x y acelera en CPU)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+
+# Guardamos el archivo .tflite
+with open('modelo_llaves_cuantizado.tflite', 'wb') as f:
+    f.write(tflite_model)
+
+print("¡Entrenamiento y exportación finalizados exitosamente!")
+print("Archivos generados: 'modelo_llaves_cuantizado.tflite' y 'etiquetas_llaves.json'")
