@@ -14,22 +14,24 @@ EPOCHS = 10
 LEARNING_RATE = 0.001
 
 #Division de datos en entrenamiento y validacion en 80% | 20%
-train_ds = tf.keras.preprocessing.image_dataset_from_directory(
+train_ds = tf.keras.utils.image_dataset_from_directory(
     DATASET_PATH,
     validation_split=0.2,
     subset="training",
     seed=123,
     image_size=IMG_SIZE,
-    batch_size=BACTH_SIZE
+    batch_size=BACTH_SIZE,
+    crop_to_aspect_ratio=True
 )
 
-val_ds = tf.keras.preprocessing.image_dataset_from_directory(
+val_ds = tf.keras.utils.image_dataset_from_directory(
     DATASET_PATH,
     validation_split=0.2,
     subset="validation",
     seed=123,
     image_size=IMG_SIZE,
-    batch_size=BACTH_SIZE
+    batch_size=BACTH_SIZE,
+    crop_to_aspect_ratio=True
 )
 
 class_names = train_ds.class_names
@@ -69,7 +71,7 @@ base_model.trainable = False  # Congelar capas convolucionales base
 inputs = layers.Input(shape=(224, 224, 3))
 x = data_augmentation(inputs)
 # Normalización específica requerida por MobileNetV2 (escala [-1, 1])
-x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
+x = layers.Rescaling(scale=1.0 / 127.5, offset=-1.0)(x)
 x = base_model(x, training=False)
 x = layers.GlobalAveragePooling2D()(x)
 x = layers.Dropout(0.2)(x)

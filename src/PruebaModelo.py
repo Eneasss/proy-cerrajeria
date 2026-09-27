@@ -72,7 +72,7 @@ def main():
         # 1. REGIÓN DE INTERÉS (ROI CUADRADA)
         # ==========================================
         # Cuadro centrado para enfocar la paleta/perfil sin deformar aspecto
-        box_size = int(min(h, w) * 0.60)
+        box_size = int(min(h, w) * 0.70)
         x1 = (w - box_size) // 2
         y1 = (h - box_size) // 2
         x2 = x1 + box_size
