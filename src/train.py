@@ -8,7 +8,7 @@ DATASET_PATH = os.path.join("dataset")
 MODEL_PATH = os.path.join("model")
 os.makedirs(MODEL_PATH, exist_ok=True)
 
-IMG_SIZE = (224, 224)
+IMG_SIZE = (320, 320)
 BACTH_SIZE = 16
 EPOCHS = 10
 FINE_TUNE_EPOCHS = 8
@@ -65,13 +65,13 @@ data_augmentation = tf.keras.Sequential([
 # ==========================================
 # Carga de MobileNetV2 preentrenado sin la capa final de ImageNet
 base_model = tf.keras.applications.MobileNetV2(
-    input_shape=(224, 224, 3),
+    input_shape=IMG_SIZE + (3,),
     include_top=False,
     weights="imagenet"
 )
 base_model.trainable = False  # Congelar capas convolucionales base
 
-inputs = layers.Input(shape=(224, 224, 3))
+inputs = layers.Input(shape=IMG_SIZE + (3,))
 x = data_augmentation(inputs)
 # Normalización específica requerida por MobileNetV2 (escala [-1, 1])
 x = layers.Rescaling(scale=1.0 / 127.5, offset=-1.0)(x)
