@@ -2,6 +2,7 @@ import os
 import json
 import time
 import cv2
+from matplotlib.pyplot import gray
 import numpy as np
 
 # Soporte para tflite-runtime (PC de mostrador) o tensorflow completo
@@ -69,16 +70,81 @@ def main():
         h, w, _ = frame.shape
 
         # ==========================================
-        # 1. REGIÓN DE INTERÉS (ROI CUADRADA)
+        # 1. REGIÓN DE INTERÉS DINÁMICA (AUTO-ENCUADRE)
         # ==========================================
-        # Cuadro centrado para enfocar la paleta/perfil sin deformar aspecto
-        box_size = int(min(h, w) * 0.70)
-        x1 = (w - box_size) // 2
-        y1 = (h - box_size) // 2
-        x2 = x1 + box_size
-        y2 = y1 + box_size
 
-        roi = frame[y1:y2, x1:x2]
+        # Parámetros calibrados para la escala de la llave
+        MIN_KEY_AREA = 2500    # Llaves chicas (ej. cilindro)
+        MAX_KEY_AREA = 35000   # Si supera esto, es una sombra, la hoja entera o la mesa
+        BORDER_MARGIN = 15     # Píxeles de margen con los bordes de la cámara
+
+        # Aislamiento de la llave sobre el fondo blanco
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+
+        # Otsu inverso: la llave (oscura) pasa a blanco y el papel pasa a negro
+        # 1. Umbral adaptativo: inmune a gradientes de iluminación y sombras suaves
+        thresh = cv2.adaptiveThreshold(
+            blurred, 
+            255, 
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY_INV, 
+            blockSize=51, 
+            C=12
+        )
+
+        # 2. Limpieza morfológica: rellena reflejos internos del metal y borra motas
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+
+        valid_candidates = []
+        for c in contours:
+            area = cv2.contourArea(c)
+            # Filtrar solo si tiene el área de una llave
+            if MIN_KEY_AREA < area < MAX_KEY_AREA:
+                kx, ky, kw, kh = cv2.boundingRect(c)
+                # Descartar si el contorno toca los bordes exteriores de la cámara
+                if (kx > BORDER_MARGIN and ky > BORDER_MARGIN and 
+                    (kx + kw) < (w - BORDER_MARGIN) and 
+                    (ky + kh) < (h - BORDER_MARGIN)):
+                    valid_candidates.append(c)
+
+        """ # Filtrar contornos grandes para descartar sombras suaves o motas de polvo
+        valid_contours = [c for c in contours if cv2.contourArea(c) > 3000] """
+
+        if valid_candidates:
+            # Seleccionar el contorno principal (la llave)
+            key_cnt = max(valid_candidates, key=cv2.contourArea)
+            kx, ky, kw, kh = cv2.boundingRect(key_cnt)
+
+            # El lado del cuadrado se define por la dimensión mayor (normalmente el largo de la llave)
+            # con un 15% de margen extra (padding)
+            max_side = max(kw, kh)
+            box_size = int(max_side * 1.25)
+            box_size = min(box_size, min(h, w)-20)  # No exceder los límites de la cámara
+
+            # Calcular centro de la llave detectada
+            center_x = kx + kw // 2
+            center_y = ky + kh // 2
+
+            # Construir recorte cuadrado centrado en la llave
+            x1 = max(0, min(w - box_size, center_x - box_size // 2))
+            y1 = max(0, min(h - box_size, center_y - box_size // 2))
+            x2 = x1 + box_size
+            y2 = y1 + box_size
+
+            roi = frame[y1:y2, x1:x2]
+        else:
+            # Recuadro por defecto si no hay ninguna llave en la mesa
+            box_size = int(min(h, w) * 0.42)
+            x1 = (w - box_size) // 2
+            y1 = (h - box_size) // 2
+            x2 = x1 + box_size
+            y2 = y1 + box_size
+            roi = frame[y1:y2, x1:x2]
 
         # ==========================================
         # 2. PREPROCESAMIENTO E INFERENCIA TFLITE

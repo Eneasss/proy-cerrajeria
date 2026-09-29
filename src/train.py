@@ -11,7 +11,10 @@ os.makedirs(MODEL_PATH, exist_ok=True)
 IMG_SIZE = (224, 224)
 BACTH_SIZE = 16
 EPOCHS = 10
+FINE_TUNE_EPOCHS = 8
+TOTAL_EPOCHS = EPOCHS + FINE_TUNE_EPOCHS
 LEARNING_RATE = 0.001
+FINE_TUNE_LR = 0.00001
 
 #Division de datos en entrenamiento y validacion en 80% | 20%
 train_ds = tf.keras.utils.image_dataset_from_directory(
@@ -79,15 +82,71 @@ outputs = layers.Dense(num_classes, activation="softmax")(x)
 
 model = models.Model(inputs, outputs)
 
+# ==========================================
+# 5. Fase 1 Entrenamiento de cabecera
+# ==========================================
+
+print("\n" + "=" * 50)
+print(">>> FASE 1: Entrenando cabecera con base congelada...")
+print("=" * 50)
+
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE),
     loss=tf.keras.losses.SparseCategoricalCrossentropy(),
     metrics=["accuracy"]
 )
 
-model.summary()
+history_phase1 = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=EPOCHS
+)
+
+#model.summary()
 
 # ==========================================
+# 5. FASE 2: FINE-TUNING (Ajuste fino)
+# ==========================================
+
+print("\n" + "=" * 50)
+print(">>> FASE 2: Descongelando últimas capas para Fine-Tuning...")
+print("=" * 50)
+
+base_model.trainable = True
+
+fine_tune_at = len(base_model.layers) - 30
+for layer in base_model.layers[:fine_tune_at]:
+    layer.trainable = False
+
+trainable_count = len([l for l in base_model.layers if l.trainable])
+print(f"Capas base totales: {len(base_model.layers)} | Capas descongeladas: {trainable_count}")
+
+# 3. Recompilar obligatoriamente con Learning Rate 100 veces menor
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=FINE_TUNE_LR),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+    metrics=["accuracy"]
+)
+callbacks_finetune = [
+    tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=3,
+        restore_best_weights=True
+    )
+]
+
+# Continuar entrenamiento desde la última época completada
+initial_epoch_phase2 = len(history_phase1.epoch)
+
+history_phase2 = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=TOTAL_EPOCHS,
+    initial_epoch=initial_epoch_phase2,
+    callbacks=callbacks_finetune
+)
+
+""" # ==========================================
 # 5. ENTRENAMIENTO
 # ==========================================
 callbacks = [
@@ -96,9 +155,29 @@ callbacks = [
         patience=4,
         restore_best_weights=True
     )
-]
+] """
 
-print("\nIniciando entrenamiento...")
+# Guardar modelo final en formato Keras nativo
+keras_path = os.path.join(MODEL_PATH, "key_classifier.keras")
+model.save(keras_path)
+print(f"\nModelo final guardado en: {keras_path}")
+
+# ==========================================
+# 6. CONVERSIÓN Y CUANTIZACIÓN A TFLITE
+# ==========================================
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+
+tflite_path = os.path.join(MODEL_PATH, "key_classifier.tflite")
+with open(tflite_path, "wb") as f:
+    f.write(tflite_model)
+
+size_mb = os.path.getsize(tflite_path) / (1024 * 1024)
+print(f"Modelo TFLite exportado: {tflite_path} ({size_mb:.2f} MB)")
+
+""" print("\nIniciando entrenamiento...")
 history = model.fit(
     train_ds,
     validation_data=val_ds,
@@ -109,9 +188,9 @@ history = model.fit(
 # Guardar modelo Keras original (.keras)
 keras_model_path = os.path.join(MODEL_PATH, "key_classifier.keras")
 model.save(keras_model_path)
-print(f"\nModelo base guardado en: {keras_model_path}")
+print(f"\nModelo base guardado en: {keras_model_path}") """
 
-# ==========================================
+""" # ==========================================
 # 6. CONVERSIÓN Y CUANTIZACIÓN A TFLITE
 # ==========================================
 converter = tf.lite.TFLiteConverter.from_keras_model(model)
@@ -124,4 +203,4 @@ with open(tflite_path, "wb") as f:
     f.write(tflite_model)
 
 size_mb = os.path.getsize(tflite_path) / (1024 * 1024)
-print(f"Modelo TFLite generado exitosamente: {tflite_path} ({size_mb:.2f} MB)")
+print(f"Modelo TFLite generado exitosamente: {tflite_path} ({size_mb:.2f} MB)") """

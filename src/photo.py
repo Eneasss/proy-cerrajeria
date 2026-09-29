@@ -6,7 +6,7 @@ import cv2
 # CONFIGURACIÓN GENERAL
 # ==========================================
 DATASET_DIR = "dataset"  # Carpeta raíz compatible con image_dataset_from_directory
-CAMERA_INDEX = 1         # 0 para cámara principal, 1 o 2 para webcam USB externa
+CAMERA_INDEX = 0         # 0 para cámara principal, 1 o 2 para webcam USB externa
 FRAME_WIDTH = 1280
 FRAME_HEIGHT = 720
 
