@@ -114,7 +114,7 @@ print("=" * 50)
 
 base_model.trainable = True
 
-fine_tune_at = len(base_model.layers) - 60
+fine_tune_at = len(base_model.layers) - 45
 for layer in base_model.layers[:fine_tune_at]:
     layer.trainable = False
 
