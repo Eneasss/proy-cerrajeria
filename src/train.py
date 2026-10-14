@@ -54,7 +54,7 @@ val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 # ==========================================
 # Simula variaciones de posicionamiento y luz en el local
 data_augmentation = tf.keras.Sequential([
-    layers.RandomFlip("horizontal"),
+    #layers.RandomFlip("horizontal"),
     layers.RandomRotation(0.08),  # Giro de hasta +/- ~28 grados
     layers.RandomZoom(0.05),
     layers.RandomContrast(0.1)
@@ -114,7 +114,7 @@ print("=" * 50)
 
 base_model.trainable = True
 
-fine_tune_at = len(base_model.layers) - 45
+fine_tune_at = len(base_model.layers) - 30
 for layer in base_model.layers[:fine_tune_at]:
     layer.trainable = False
 
